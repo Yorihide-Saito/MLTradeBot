@@ -1,0 +1,47 @@
+# ===== Secrets =====
+.env
+*.key
+*.pem
+
+# ===== Trained models (large binary, manage separately) =====
+model_buy/
+model_sell/
+
+# ===== Data cache (large binary, regenerated at runtime) =====
+data/
+cache/
+eval/
+logs/
+
+# ===== Features pickle (regenerated from code) =====
+features/
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ===== Virtual environments =====
+.venv/
+venv/
+env/
+
+# ===== Jupyter =====
+.ipynb_checkpoints/
+notebooks/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,29 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file: .env
+    volumes:
+      - ./model_buy:/work/model_buy:ro
+      - ./model_sell:/work/model_sell:ro
+      - ./data:/work/data
+      - ./cache:/work/cache
+      - ./features:/work/features:ro
+    shm_size: "2gb"
+    restart: unless-stopped
+    command: python -m src.entrypoints.main
+
+  retrain:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file: .env
+    volumes:
+      - ./model_buy:/work/model_buy
+      - ./model_sell:/work/model_sell
+      - ./data:/work/data
+      - ./features:/work/features
+    shm_size: "2gb"
+    profiles: ["retrain"]
+    command: python -m src.entrypoints.retrain.retrain_main
