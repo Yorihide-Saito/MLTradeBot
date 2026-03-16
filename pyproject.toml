@@ -26,6 +26,8 @@ dependencies = [
     "tenacity>=8.5",
     # Logging
     "loguru>=0.7",
+    # Historical data (Binance bootstrap)
+    "yfinance>=0.2",
 ]
 
 [project.optional-dependencies]

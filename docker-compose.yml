@@ -26,4 +26,4 @@ services:
       - ./features:/work/features
     shm_size: "2gb"
     profiles: ["retrain"]
-    command: python -m training.main
+    command: python -m training.main --binance --days 365 --trials 100

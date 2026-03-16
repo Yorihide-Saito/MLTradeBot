@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from pathlib import Path
 
+import pandas as pd
 from loguru import logger
 
 from src.infrastructure.feature_engineering.feature_selector import FeatureSelector
@@ -48,14 +49,27 @@ class RetrainPipeline:
         self._forward_bars = forward_bars
         self._n_trials = n_trials
 
-    def run(self, bot_id: str, atr_coeff: float, days_of_history: int = 30) -> None:
-        """1 bot_id のモデルペアを再学習する。"""
-        logger.info(f"[{bot_id}] Retraining: atr_coeff={atr_coeff}, days={days_of_history}")
+    def run(
+        self,
+        bot_id: str,
+        atr_coeff: float,
+        days_of_history: int = 30,
+        df_raw: pd.DataFrame | None = None,
+    ) -> None:
+        """1 bot_id のモデルペアを再学習する。
 
-        # 1. データ取得 (BitFlyer は最大 30 日; CSV bootstrap 済みならキャッシュから読む)
-        end = date.today()
-        start = end - timedelta(days=min(days_of_history, 30))
-        df_raw = self._fetcher.fetch_range(start, end, interval_minutes=15)
+        Args:
+            df_raw: 外部から渡す OHLCV DataFrame。
+                    None の場合は BitFlyer REST から取得 (最大 30 日)。
+                    Binance など外部ソースを使う場合は呼び出し元で渡す。
+        """
+        logger.info(f"[{bot_id}] Retraining: atr_coeff={atr_coeff}")
+
+        # 1. データ取得
+        if df_raw is None:
+            end = date.today()
+            start = end - timedelta(days=min(days_of_history, 30))
+            df_raw = self._fetcher.fetch_range(start, end, interval_minutes=15)
 
         if len(df_raw) < 500:
             logger.warning(f"[{bot_id}] データ不足 ({len(df_raw)} rows)。CSV bootstrap を推奨。")
@@ -90,10 +104,15 @@ class RetrainPipeline:
         self._model_repo.save_model_pair(bot_id, model_buy, model_sell)
         logger.info(f"[{bot_id}] Models saved.")
 
-    def run_all(self, days_of_history: int = 30) -> None:
+    def run_all(
+        self,
+        days_of_history: int = 30,
+        df_raw: pd.DataFrame | None = None,
+    ) -> None:
+        """全 bot_id を再学習する。df_raw を渡すと全 bot で同じデータを共用する。"""
         for bot_id in self._model_repo.list_bot_ids():
             atr_coeff = self._model_repo.get_atr_coeff(bot_id)
             try:
-                self.run(bot_id, atr_coeff, days_of_history)
+                self.run(bot_id, atr_coeff, days_of_history, df_raw=df_raw)
             except Exception as e:
                 logger.error(f"[{bot_id}] Failed: {e}")

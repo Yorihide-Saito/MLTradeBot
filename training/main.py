@@ -2,25 +2,29 @@
 training/main.py — 再学習 CLI エントリーポイント
 
 使い方:
+  # Binance から 1 年分取得して再学習 (推奨)
+  python -m training.main --binance --days 365 --trials 100
+
+  # Binance + 特定 bot のみ
+  python -m training.main --binance --days 365 --bot-id 0p186 --trials 50
+
   # Docker
   docker compose --profile retrain run retrain
 
-  # ローカル (直近 30 日で再学習)
+  # BitFlyer REST のみ (直近 30 日)
   python -m training.main --trials 50
 
-  # CSV bootstrap 後に再学習 (長期データ推奨)
+  # CSV bootstrap 後に再学習 (BitFlyer 用長期データ)
   python -m training.main --csv /work/data/BitFlyer_BTCJPY_1h.csv --trials 100
 
-  # 特定ボットのみ
-  python -m training.main --bot-id 0p186 --trials 50
-
 BitFlyer の制約 (31 日のみ) への対処:
-  https://www.cryptodatadownload.com/data/bitflyer/ から CSV をダウンロード後、
-  --csv オプションで渡すとキャッシュとマージされる。
+  --binance を使うと Binance BTCUSDT を USDJPY 換算して取得する。
+  認証不要。yfinance (USDJPY=X) で為替レートを補完する。
 """
 from __future__ import annotations
 
 import argparse
+from datetime import date, timedelta
 from pathlib import Path
 
 from loguru import logger
@@ -64,13 +68,21 @@ def build_pipeline(settings: Settings, n_trials: int) -> tuple[RetrainPipeline, 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Retrain trading models (BitFlyer)")
-    parser.add_argument("--days", type=int, default=30,
-                        help="Days of history via REST (max 30; use --csv for longer)")
+    parser = argparse.ArgumentParser(description="Retrain trading models")
+    parser.add_argument(
+        "--binance", action="store_true",
+        help="Binance BTCUSDT + USDJPY 換算でデータ取得 (推奨: 長期学習用)",
+    )
+    parser.add_argument(
+        "--days", type=int, default=365,
+        help="取得日数 (--binance 時は最大 730 日; BitFlyer 時は最大 30 日)",
+    )
     parser.add_argument("--trials", type=int, default=50, help="Optuna trials per model")
-    parser.add_argument("--bot-id", type=str, default=None, help="Retrain specific bot only")
-    parser.add_argument("--csv", type=str, default=None,
-                        help="CSV path for historical bootstrap (cryptodatadownload.com 形式)")
+    parser.add_argument("--bot-id", type=str, default=None, help="特定 bot のみ再学習")
+    parser.add_argument(
+        "--csv", type=str, default=None,
+        help="CSV パス (cryptodatadownload.com 形式; BitFlyer 用長期 bootstrap)",
+    )
     args = parser.parse_args()
 
     settings = Settings()
@@ -78,21 +90,45 @@ def main() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
 
     pipeline, fetcher = build_pipeline(settings, n_trials=args.trials)
+    model_repo = JoblibModelRepository(settings.model_buy_dir, settings.model_sell_dir)
 
-    if args.csv:
-        logger.info(f"Importing CSV: {args.csv}")
-        df = fetcher.import_csv_and_merge(Path(args.csv))
-        logger.info(f"CSV merged: {len(df)} rows")
+    # ------------------------------------------------------------------ #
+    # データソース選択                                                      #
+    # ------------------------------------------------------------------ #
 
-    logger.info(f"Starting retrain: days={args.days}, trials={args.trials}")
+    df_raw = None  # None のとき pipeline 内で BitFlyer REST を使用
+
+    if args.binance:
+        from training.binance_data_fetcher import BinanceDataFetcher
+        max_days = min(args.days, 730)  # yfinance の 1h 足上限
+        start = date.today() - timedelta(days=max_days)
+        logger.info(f"Binance モード: {start} → {date.today()} ({max_days} 日)")
+        df_raw = BinanceDataFetcher().fetch_btcjpy(start=start, end=date.today())
+        logger.info(f"取得完了: {len(df_raw)} rows")
+
+    elif args.csv:
+        logger.info(f"CSV インポート: {args.csv}")
+        df_merged = fetcher.import_csv_and_merge(Path(args.csv))
+        logger.info(f"CSV マージ完了: {len(df_merged)} rows")
+        # CSV マージ後は BitFlyer REST キャッシュを pipeline が読む (df_raw=None のまま)
+
+    # ------------------------------------------------------------------ #
+    # 再学習実行                                                           #
+    # ------------------------------------------------------------------ #
+
+    logger.info(f"再学習開始: trials={args.trials}, bot_id={args.bot_id or 'all'}")
 
     if args.bot_id:
-        model_repo = JoblibModelRepository(settings.model_buy_dir, settings.model_sell_dir)
-        pipeline.run(args.bot_id, model_repo.get_atr_coeff(args.bot_id), days_of_history=args.days)
+        pipeline.run(
+            args.bot_id,
+            model_repo.get_atr_coeff(args.bot_id),
+            days_of_history=args.days,
+            df_raw=df_raw,
+        )
     else:
-        pipeline.run_all(days_of_history=args.days)
+        pipeline.run_all(days_of_history=args.days, df_raw=df_raw)
 
-    logger.info("Retraining complete!")
+    logger.info("再学習完了!")
 
 
 if __name__ == "__main__":
