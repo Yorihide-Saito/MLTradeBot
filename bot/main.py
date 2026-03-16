@@ -1,10 +1,12 @@
 """
-Composition Root — GMO Coin 依存なし、BitFlyer のみ。
+bot/main.py — Trading Bot Composition Root
 
-依存関係グラフ:
-  Settings -> BitFlyerHttpClient -> BitFlyerExchangeAdapter
-           -> BitFlyerDataProvider -> BitFlyerOHLCVRepository
-           -> BotAgent (× n) -> BotOrchestrator -> run()
+取引ボットの起動エントリーポイント。
+このファイルだけが全レイヤーを import して依存関係を組み立てる。
+
+起動方法:
+  python -m bot.main
+  docker compose up bot
 """
 from __future__ import annotations
 
@@ -31,23 +33,23 @@ from src.infrastructure.persistence.pickle_state_repository import PickleStateRe
 
 
 def build_application(settings: Settings) -> BotOrchestrator:
-    """全依存関係を BitFlyer のみで組み立てる (Composition Root)。"""
+    """全依存関係を BitFlyer のみで組み立てる。"""
 
-    # 1. BitFlyer HTTP クライアント (認証あり)
+    # 1. BitFlyer HTTP クライアント
     auth = BitFlyerAuthenticator(settings.bitflyer_api_key, settings.bitflyer_secret_key)
     http = BitFlyerHttpClient(auth)
 
     # 2. Exchange adapter
     exchange = BitFlyerExchangeAdapter(http)
 
-    # 3. OHLCV: BitFlyer 約定履歴から構築 + WebSocket でリアルタイム更新
+    # 3. OHLCV: WebSocket でリアルタイム収集 + REST で補完
     data_provider = BitFlyerDataProvider(
         http=http,
         data_dir=settings.data_dir,
         product_code=settings.symbol,
         interval_minutes=settings.candle_interval_minutes,
     )
-    data_provider.start_websocket()  # バックグラウンドで約定収集開始
+    data_provider.start_websocket()
     ohlcv_repo = BitFlyerOHLCVRepository(data_provider)
 
     # 4. State / Model repositories
@@ -60,7 +62,7 @@ def build_application(settings: Settings) -> BotOrchestrator:
     feature_names = feature_sel.load_feature_names()
     logger.info(f"Loaded {len(feature_names)} feature names")
 
-    # 6. BotAgent を model ペアの数だけ生成
+    # 6. BotAgent をモデルペアの数だけ生成
     agents: List[BotAgent] = []
     for bot_id in model_repo.list_bot_ids():
         model_buy, model_sell = model_repo.load_model_pair(bot_id)
@@ -68,7 +70,7 @@ def build_application(settings: Settings) -> BotOrchestrator:
         agent = BotAgent(
             bot_id=bot_id,
             atr_coeff=atr_coeff,
-            lot=0.01,  # 起動直後に update_lots() で上書き
+            lot=0.01,  # 起動直後に update_lots() で上書きされる
             atr_period=settings.atr_period,
             symbol=settings.symbol,
             pips=settings.pips,
@@ -79,11 +81,10 @@ def build_application(settings: Settings) -> BotOrchestrator:
             feature_names=feature_names,
         )
         agents.append(agent)
-        logger.info(f"BotAgent created: {bot_id} (atr_coeff={atr_coeff})")
+        logger.info(f"BotAgent: {bot_id} (atr_coeff={atr_coeff})")
 
     logger.info(f"Total bots: {len(agents)}")
 
-    # 7. Orchestrator (メインループ)
     return BotOrchestrator(
         agents=agents,
         exchange=exchange,
@@ -103,9 +104,8 @@ def main() -> None:
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Starting crypto-bot (BitFlyer only): symbol={settings.symbol}")
-    orchestrator = build_application(settings)
-    orchestrator.run()
+    logger.info(f"Starting bot: symbol={settings.symbol}")
+    build_application(settings).run()
 
 
 if __name__ == "__main__":

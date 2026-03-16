@@ -1,3 +1,6 @@
+"""
+training/model_evaluator.py — モデル評価・レポート出力
+"""
 from __future__ import annotations
 
 import json
@@ -8,11 +11,11 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 from loguru import logger
-from sklearn.metrics import classification_report, precision_score, recall_score
+from sklearn.metrics import precision_score, recall_score
 
 
 class ModelEvaluator:
-    """学習済みモデルの性能を評価し、メトリクスをレポートする。"""
+    """学習済みモデルの精度・プロフィットファクター・シャープレシオを評価する。"""
 
     def evaluate(
         self,
@@ -21,36 +24,20 @@ class ModelEvaluator:
         label_col: str,
         feature_names: List[str],
     ) -> Dict[str, float]:
-        """精度・再現率・プロフィットファクター等を計算する。
-
-        Args:
-            model: 学習済み LGBMClassifier
-            df: 特徴量 + ラベル + OHLCV を含む DataFrame
-            label_col: ラベル列名
-            feature_names: 特徴量名リスト
-
-        Returns:
-            メトリクス辞書
-        """
         df_clean = df.dropna(subset=feature_names + [label_col])
-        X = df_clean[feature_names]
-        y = df_clean[label_col]
-
+        X, y = df_clean[feature_names], df_clean[label_col]
         y_pred = model.predict(X)
-        y_prob = model.predict_proba(X)[:, 1]
 
         precision = precision_score(y, y_pred, zero_division=0)
         recall = recall_score(y, y_pred, zero_division=0)
 
-        # シグナルが出た時の仮想リターン計算
         if "cl" in df_clean.columns:
             returns = df_clean["cl"].pct_change().shift(-1)
             signal_returns = returns[y_pred == 1] if label_col == "y_buy" else -returns[y_pred == 1]
             profit_factor = self._profit_factor(signal_returns)
             sharpe = self._sharpe_ratio(signal_returns)
         else:
-            profit_factor = float("nan")
-            sharpe = float("nan")
+            profit_factor = sharpe = float("nan")
 
         metrics = {
             "precision": round(precision, 4),
@@ -60,22 +47,15 @@ class ModelEvaluator:
             "sharpe_ratio": round(sharpe, 4) if not np.isnan(sharpe) else 0.0,
             "positive_label_rate": round(float(y.mean()), 4),
         }
-
-        logger.info(f"[{label_col}] Evaluation: {metrics}")
+        logger.info(f"[{label_col}] {metrics}")
         return metrics
 
-    def save_report(self, metrics: Dict[str, float], output_dir: Path, run_id: str) -> None:
-        """評価レポートを JSON として保存する。"""
+    def save_report(self, metrics: Dict, output_dir: Path, run_id: str) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
-        report = {
-            "run_id": run_id,
-            "timestamp": datetime.now().isoformat(),
-            "metrics": metrics,
-        }
+        report = {"run_id": run_id, "timestamp": datetime.now().isoformat(), "metrics": metrics}
         path = output_dir / f"eval_{run_id}.json"
-        with path.open("w") as f:
-            json.dump(report, f, indent=2, ensure_ascii=False)
-        logger.info(f"Report saved to {path}")
+        path.write_text(json.dumps(report, indent=2, ensure_ascii=False))
+        logger.info(f"Report saved: {path}")
 
     @staticmethod
     def _profit_factor(returns: pd.Series) -> float:

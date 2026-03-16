@@ -9,33 +9,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pip install -e ".[dev]"
 
 # Run the trading bot
-python -m src.entrypoints.main
+python -m bot.main
 # or via pyproject.toml script:
 bot
 
 # Retrain all models (uses BitFlyer REST + cached data)
-python -m src.entrypoints.retrain.retrain_main --trials 50
+python -m training.main --trials 50
 
 # Retrain with CSV bootstrap (required for >31 days of history)
-python -m src.entrypoints.retrain.retrain_main --csv /work/data/BitFlyer_BTCJPY_1h.csv --trials 100
+python -m training.main --csv /work/data/BitFlyer_BTCJPY_1h.csv --trials 100
 
 # Retrain a single bot
-python -m src.entrypoints.retrain.retrain_main --bot-id 0p186 --trials 50
+python -m training.main --bot-id 0p186 --trials 50
 
 # Docker
 docker compose up bot
 docker compose --profile retrain run retrain
 
 # Lint
-ruff check src/
-ruff format src/
+ruff check src/ bot/ training/
+ruff format src/ bot/ training/
 
 # Type check
-mypy src/
+mypy src/ bot/ training/
 
-# Tests (no test suite exists yet; tests go in tests/)
+# Tests
 pytest tests/
 pytest tests/unit/test_bot_agent.py  # single file
+pytest -x  # stop on first failure
 ```
 
 ## Architecture
@@ -74,10 +75,20 @@ entrypoints/    ← only place that imports from all layers simultaneously
 - `feature_engineering/TALibFeatureCalculator` — **must stay bit-for-bit identical to the original `src/richman_features.py`**; the trained `.xz` models depend on the exact feature names and computation
 - `ml/LightGBMSignalGenerator` — wraps a loaded joblib model; always uses `iloc[-2]` (same convention as the original)
 
-### Entrypoints (`src/entrypoints/`)
+### Bot entrypoint (`bot/`)
 
-- `main.py` — **Composition Root**: the only file that wires all layers together. Instantiates concrete implementations and injects them into `BotOrchestrator`. Edit here to swap exchanges or repositories.
-- `retrain/` — standalone retraining pipeline: `HistoricalDataFetcher` → `TALibFeatureCalculator` → `LabelGenerator` → `ModelTrainer` (Optuna + `TimeSeriesSplit`) → `ModelEvaluator` → `JoblibModelRepository.save_model_pair()`
+- `bot/main.py` — **Composition Root**: the only file that wires all layers together. Instantiates concrete implementations and injects them into `BotOrchestrator`. Edit here to swap exchanges or repositories.
+
+### Training (`training/`)
+
+Standalone retraining pipeline, independent of the bot runtime:
+
+- `label_generator.py` — ATR-based binary labels (y_buy / y_sell)
+- `data_fetcher.py` — `HistoricalDataFetcher` wrapping `BitFlyerDataProvider`; warns if >31 days requested
+- `model_trainer.py` — `ModelTrainer`: Optuna + `TimeSeriesSplit` walk-forward CV; optimises `_precision_at_threshold`
+- `model_evaluator.py` — precision / recall / profit_factor / sharpe; saves JSON reports to `work/eval/`
+- `pipeline.py` — `RetrainPipeline`: orchestrates all steps; `run(bot_id)` and `run_all()`
+- `main.py` — CLI: `--days`, `--trials`, `--bot-id`, `--csv`
 
 ## Critical conventions
 
