@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from training.label_generator import LabelGenerator
+from training.src.label_generator import LabelGenerator
 
 
 @pytest.fixture

@@ -42,12 +42,15 @@ dev = [
 ]
 
 [project.scripts]
-bot     = "bot.main:main"
-retrain = "training.main:main"
+bot     = "bot.src.main:main"
+retrain = "training.src.main:main"
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["bot/unit_test", "training/unit_test", "back_test/unit_test"]
 
 [tool.mypy]
 python_version = "3.12"

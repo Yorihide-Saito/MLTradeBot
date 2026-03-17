@@ -4,8 +4,10 @@
 *.pem
 
 # ===== Trained models (large binary, manage separately) =====
-model_buy/
-model_sell/
+model_buy/*
+!model_buy/.gitkeep
+model_sell/*
+!model_sell/.gitkeep
 
 # ===== Data cache (large binary, regenerated at runtime) =====
 data/

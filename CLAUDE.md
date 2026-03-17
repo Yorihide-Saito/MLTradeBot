@@ -9,103 +9,113 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pip install -e ".[dev]"
 
 # Run the trading bot
-python -m bot.main
+python -m bot.src.main
 # or via pyproject.toml script:
 bot
 
-# Retrain all models (uses BitFlyer REST + cached data)
-python -m training.main --trials 50
+# Retrain all models — Binance (推奨)
+python -m training.src.main --binance --days 365 --trials 100
 
-# Retrain with CSV bootstrap (required for >31 days of history)
-python -m training.main --csv /work/data/BitFlyer_BTCJPY_1h.csv --trials 100
+# Retrain with CSV bootstrap (BitFlyer 形式)
+python -m training.src.main --csv /work/data/BitFlyer_BTCJPY_1h.csv --trials 100
 
 # Retrain a single bot
-python -m training.main --bot-id 0p186 --trials 50
+python -m training.src.main --binance --days 365 --bot-id 0p186 --trials 50
 
 # Docker
 docker compose up bot
 docker compose --profile retrain run retrain
 
 # Lint
-ruff check src/ bot/ training/
-ruff format src/ bot/ training/
+ruff check src/ bot/ training/ back_test/
+ruff format src/ bot/ training/ back_test/
 
 # Type check
-mypy src/ bot/ training/
+mypy src/ bot/ training/ back_test/
 
-# Tests
-pytest tests/
-pytest tests/unit/test_bot_agent.py  # single file
-pytest -x  # stop on first failure
+# Tests (testpaths configured in pyproject.toml)
+pytest
+pytest bot/unit_test/test_bot_agent.py  # single file
+pytest -x                               # stop on first failure
+```
+
+## Directory Structure
+
+```
+bot/
+  src/main.py         ← Composition Root: wires all layers, starts BotOrchestrator
+  unit_test/          ← bot & shared infrastructure tests
+
+training/
+  src/                ← retraining pipeline (independent of bot runtime)
+    main.py           ← CLI: --binance / --csv / --days / --trials / --bot-id
+    pipeline.py       ← RetrainPipeline orchestrator
+    binance_data_fetcher.py  ← Binance BTCUSDT × USDJPY → BTCJPY
+    data_fetcher.py   ← BitFlyer REST (max 31 days)
+    label_generator.py
+    model_trainer.py
+    model_evaluator.py
+  unit_test/          ← training-specific tests
+
+back_test/
+  src/                ← OHLCV backtesting (未実装)
+  unit_test/
+
+src/                  ← 共有レイヤー (domain / application / infrastructure / config)
+model_buy/            ← buy_<bot_id>.xz (gitignore対象, .gitkeep で追跡)
+model_sell/           ← sell_<bot_id>.xz (同上)
 ```
 
 ## Architecture
 
-The codebase follows **Hexagonal (Ports & Adapters) architecture** with four layers. The key rule: **inner layers never import from outer ones**.
+Hexagonal (Ports & Adapters). **Inner layers never import from outer ones.**
 
 ```
-domain/         ← no external imports; pure Python dataclasses + ABCs
-application/    ← imports only from domain/
-infrastructure/ ← implements domain ports; imports third-party libs
-entrypoints/    ← only place that imports from all layers simultaneously
+src/domain/         ← pure Python dataclasses + ABCs (no external deps)
+src/application/    ← imports only from domain/
+src/infrastructure/ ← implements domain ports; imports third-party libs
+bot/src/ training/src/ back_test/src/  ← import from all layers
 ```
 
-### Domain layer (`src/domain/`)
+### Domain ports (`src/domain/ports/`)
 
-- `entities/` — frozen dataclasses: `Order`, `Execution`, `Position`, `PositionSummary`, `Candle`
-- `ports/` — Abstract Base Classes (the "interfaces"):
-  - `ExchangePort` — all exchange operations (place/cancel orders, get positions/balance/executions)
-  - `SignalGeneratorPort` — `predict(df, feature_names) -> float` (positive = signal)
-  - `StateRepositoryPort` — order/position persistence per bot_id
-  - `OHLCVRepositoryPort` — load / save / fetch_and_update candles
-  - `ModelRepositoryPort` — load/save joblib model pairs
+- `ExchangePort` — place/cancel orders, get positions/balance/executions
+- `SignalGeneratorPort` — `predict(df, feature_names) -> float` (positive = signal)
+- `StateRepositoryPort` — order/position persistence per bot_id
+- `OHLCVRepositoryPort` — load/save/fetch candles
+- `ModelRepositoryPort` — load/save joblib model pairs
 
-### Application layer (`src/application/`)
+### Application services (`src/application/services/`)
 
-- `BotAgent` — single bot; holds `ExchangePort`, `SignalGeneratorPort`, `StateRepositoryPort` via constructor injection. Key methods: `sync_state_from_executions()`, `compute_order_prices()`, `entry()`, `exit_limit()`, `exit_market()`, `run_cycle()`
-- `BotOrchestrator` — manages N `BotAgent` instances; owns the main `while True` loop with 15-minute bar detection and Wednesday maintenance guard
-- `LotAllocator` — distributes JPY balance across bots; always uses `[-2]` candle (penultimate confirmed bar)
-- `MaintenanceScheduler` — encapsulates the Wednesday 14:00–17:00 JST logic
+- `BotAgent` — single bot; key methods: `sync_state_from_executions()`, `compute_order_prices()`, `entry()`, `exit_limit()`, `exit_market()`, `run_cycle()`
+- `BotOrchestrator` — manages N `BotAgent` instances; main `while True` loop with 15-min bar detection and Wednesday maintenance guard
+- `LotAllocator` — distributes JPY balance across bots; uses `[-2]` candle
+- `MaintenanceScheduler` — Wednesday 14:00–17:00 JST logic
 
-### Infrastructure layer (`src/infrastructure/`)
+### Infrastructure (`src/infrastructure/`)
 
-- `exchange/bitflyer/` — `BitFlyerExchangeAdapter` (implements `ExchangePort`), `BitFlyerDataProvider` (builds OHLCV from WebSocket + REST executions), `BitFlyerAuthenticator` (HMAC-SHA256, Unix seconds timestamp)
-- `exchange/gmo/` — `GMOExchangeAdapter` + `GMORetryHandler` (ERR-5008/5009 logic, centralised from the original 7 copy-pasted blocks) + `GMOAuthenticator` (millisecond timestamp)
+- `exchange/bitflyer/` — `BitFlyerExchangeAdapter`, `BitFlyerDataProvider` (WebSocket + REST), `BitFlyerAuthenticator` (HMAC-SHA256, Unix seconds)
+- `exchange/gmo/` — GMO adapter (reference only, not wired)
 - `persistence/` — `PickleStateRepository`, `BitFlyerOHLCVRepository`, `JoblibModelRepository`
-- `feature_engineering/TALibFeatureCalculator` — **must stay bit-for-bit identical to the original `src/richman_features.py`**; the trained `.xz` models depend on the exact feature names and computation
-- `ml/LightGBMSignalGenerator` — wraps a loaded joblib model; always uses `iloc[-2]` (same convention as the original)
-
-### Bot entrypoint (`bot/`)
-
-- `bot/main.py` — **Composition Root**: the only file that wires all layers together. Instantiates concrete implementations and injects them into `BotOrchestrator`. Edit here to swap exchanges or repositories.
-
-### Training (`training/`)
-
-Standalone retraining pipeline, independent of the bot runtime:
-
-- `label_generator.py` — ATR-based binary labels (y_buy / y_sell)
-- `data_fetcher.py` — `HistoricalDataFetcher` wrapping `BitFlyerDataProvider`; warns if >31 days requested
-- `model_trainer.py` — `ModelTrainer`: Optuna + `TimeSeriesSplit` walk-forward CV; optimises `_precision_at_threshold`
-- `model_evaluator.py` — precision / recall / profit_factor / sharpe; saves JSON reports to `work/eval/`
-- `pipeline.py` — `RetrainPipeline`: orchestrates all steps; `run(bot_id)` and `run_all()`
-- `main.py` — CLI: `--days`, `--trials`, `--bot-id`, `--csv`
+- `feature_engineering/TALibFeatureCalculator` — **must stay bit-for-bit identical to `src/richman_features.py`**
+- `ml/LightGBMSignalGenerator` — always uses `iloc[-2]`
 
 ## Critical conventions
 
-**`[-2]` indexing** — both signal prediction and order price computation use `df.iloc[-2]`, not `-1`. This refers to the last *closed* bar, not the forming one. Do not change this.
+**`[-2]` indexing** — signal prediction and order price computation use `df.iloc[-2]` (last *closed* bar). Do not change to `-1`.
 
-**Feature list immutability** — `features/features_default.pkl` is a `List[str]` that must match the column names produced by `TALibFeatureCalculator.calculate()`. Changing any feature name or computation invalidates all existing `.xz` models without retraining.
+**Feature list immutability** — `features/features_default.pkl` (`List[str]`) must match `TALibFeatureCalculator.calculate()` column names exactly. Changing any feature name/computation invalidates all existing `.xz` models.
 
-**Model filename convention** — `buy_<bot_id>.xz` / `sell_<bot_id>.xz` where `bot_id` encodes the ATR coefficient with `p` as decimal point (e.g. `0p186` → `0.186`). `JoblibModelRepository.get_atr_coeff()` parses this.
+**Model filename convention** — `buy_<bot_id>.xz` / `sell_<bot_id>.xz` where `bot_id` encodes ATR coefficient with `p` as decimal (e.g. `0p186` → `0.186`).
 
-**Exchange is BitFlyer only** — GMO Coin adapter exists for reference but is not wired into `main.py`. `EXCHANGE_TYPE=bitflyer` is the only supported runtime value.
+**Exchange is BitFlyer only** — `EXCHANGE_TYPE=bitflyer` is the only supported runtime value.
 
-**BitFlyer OHLCV limitation** — BitFlyer has no native candle API. `BitFlyerDataProvider` builds candles from `/v1/getexecutions` (REST, max 31 days) and `lightning_executions_*` (WebSocket, real-time). For retraining with longer history, import a CSV first via `--csv`.
+**BitFlyer OHLCV limitation** — No native candle API. Candles are built from `/v1/getexecutions` (max 31 days) + WebSocket. Use `--binance` for longer training history.
 
 ## Configuration
 
-All settings are read from `.env` via `src/config/settings.py` (pydantic-settings). Copy `.env.example` to `.env`. Key variables: `BITFLYER_API_KEY`, `BITFLYER_SECRET_KEY`, `SYMBOL` (`FX_BTC_JPY` recommended), `AVAILABLE_MARGIN` (0.0–0.85).
+`.env` via `src/config/settings.py` (pydantic-settings). Key variables: `BITFLYER_API_KEY`, `BITFLYER_SECRET_KEY`, `SYMBOL` (`FX_BTC_JPY`), `AVAILABLE_MARGIN` (0.0–0.85).
 
 ## Legacy files
 
-`src/start_all_bots.py`, `src/gmocoin.py`, `src/richman_features.py`, `src/config.py` are the **original 2022 implementation** kept for reference. They are not imported by the new architecture.
+`src/start_all_bots.py`, `src/gmocoin.py`, `src/richman_features.py`, `src/config.py` — original 2022 implementation, kept for reference only.

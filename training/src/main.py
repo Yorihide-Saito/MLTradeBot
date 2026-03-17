@@ -37,9 +37,9 @@ from src.infrastructure.exchange.bitflyer.bitflyer_http_client import BitFlyerHt
 from src.infrastructure.feature_engineering.feature_selector import FeatureSelector
 from src.infrastructure.feature_engineering.talib_feature_calculator import TALibFeatureCalculator
 from src.infrastructure.persistence.joblib_model_repository import JoblibModelRepository
-from training.data_fetcher import HistoricalDataFetcher
-from training.model_evaluator import ModelEvaluator
-from training.pipeline import RetrainPipeline
+from training.src.data_fetcher import HistoricalDataFetcher
+from training.src.model_evaluator import ModelEvaluator
+from training.src.pipeline import RetrainPipeline
 
 
 def build_pipeline(settings: Settings, n_trials: int) -> tuple[RetrainPipeline, HistoricalDataFetcher]:
@@ -99,7 +99,7 @@ def main() -> None:
     df_raw = None  # None のとき pipeline 内で BitFlyer REST を使用
 
     if args.binance:
-        from training.binance_data_fetcher import BinanceDataFetcher
+        from training.src.binance_data_fetcher import BinanceDataFetcher
         max_days = min(args.days, 730)  # yfinance の 1h 足上限
         start = date.today() - timedelta(days=max_days)
         logger.info(f"Binance モード: {start} → {date.today()} ({max_days} 日)")
