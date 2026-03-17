@@ -3,12 +3,15 @@ tests/unit/test_bot_agent.py — BotAgent の単体テスト
 """
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
 
 from src.domain.entities.order import Execution, OrderSide, SettleType
 from src.domain.entities.position import Position
+
+_TS = datetime(2024, 1, 1)
 
 
 class TestSyncStateFromExecutions:
@@ -20,6 +23,8 @@ class TestSyncStateFromExecutions:
             settle_type=SettleType.OPEN,
             size=0.01,
             price=5_000_000,
+            loss_gain=0.0,
+            timestamp=_TS,
         )
         bot_agent._order_state[1001] = ("BUY", 0.01, 5_000_000)
         bot_agent.sync_state_from_executions([exc])
@@ -44,6 +49,8 @@ class TestSyncStateFromExecutions:
             settle_type=SettleType.CLOSE,
             size=0.01,
             price=5_100_000,
+            loss_gain=0.0,
+            timestamp=_TS,
         )
         bot_agent.sync_state_from_executions([exc])
         assert 2001 not in bot_agent._position_state
