@@ -22,20 +22,17 @@ from src.infrastructure.exchange.bitflyer.bitflyer_http_client import BitFlyerHt
 class BitFlyerExchangeAdapter(ExchangePort):
     """BitFlyer Lightning REST API を ExchangePort インターフェースで包む Adapter。
 
-    対象: FX_BTC_JPY (証拠金取引)
-
-    GMO Coin との主な違い:
-    - 注文返り値: child_order_acceptance_id (文字列) を int にハッシュして管理
-    - ポジションクローズ: GMO の settlePosition に相当する概念がなく、
-      反対方向の注文でネットアウトするか、get_positions で個別 positionId を管理
-    - cancel 時は child_order_acceptance_id を使用
-    - cancel_all は POST /v1/me/cancelallchildorders
+    product_code に "BTC_JPY" を渡すとスポット取引モードで動作する。
+    スポットモードでは:
+    - /v1/me/getpositions は使用しない (FX 専用)
+    - SELL 約定は SettleType.CLOSE として扱う (空売り不可のため)
+    - get_open_positions はキャッシュ済み内部状態に委ねる (空 dict を返す)
     """
 
-    PRODUCT_CODE = "FX_BTC_JPY"
-
-    def __init__(self, http: BitFlyerHttpClient) -> None:
+    def __init__(self, http: BitFlyerHttpClient, product_code: str = "FX_BTC_JPY") -> None:
         self._http = http
+        self._product_code = product_code
+        self._is_spot = product_code == "BTC_JPY"
         # acceptance_id (str) <-> 疑似 order_id (int) の対応表
         self._id_map: Dict[int, str] = {}
 
@@ -45,7 +42,7 @@ class BitFlyerExchangeAdapter(ExchangePort):
 
     def place_limit_order(self, symbol: str, side: OrderSide, size: float, price: int) -> int:
         body = {
-            "product_code": self.PRODUCT_CODE,
+            "product_code": self._product_code,
             "child_order_type": "LIMIT",
             "side": side.value,
             "price": price,
@@ -61,7 +58,7 @@ class BitFlyerExchangeAdapter(ExchangePort):
 
     def place_market_order(self, symbol: str, side: OrderSide, size: float) -> int:
         body = {
-            "product_code": self.PRODUCT_CODE,
+            "product_code": self._product_code,
             "child_order_type": "MARKET",
             "side": side.value,
             "size": round(size, 2),
@@ -117,17 +114,17 @@ class BitFlyerExchangeAdapter(ExchangePort):
                 logger.warning(f"BF cancel_orders: no acceptance_id for order_id={oid}")
                 continue
             body = {
-                "product_code": self.PRODUCT_CODE,
+                "product_code": self._product_code,
                 "child_order_acceptance_id": acceptance_id,
             }
             self._http.post_private("/v1/me/cancelchildorder", body)
             self._id_map.pop(oid, None)
 
     def cancel_all_orders(self, symbol: str) -> None:
-        body = {"product_code": self.PRODUCT_CODE}
+        body = {"product_code": self._product_code}
         self._http.post_private("/v1/me/cancelallchildorders", body)
         self._id_map.clear()
-        logger.info(f"BF cancel_all_orders: {self.PRODUCT_CODE}")
+        logger.info(f"BF cancel_all_orders: {self._product_code}")
 
     # ------------------------------------------------------------------ #
     # Queries                                                              #
@@ -135,7 +132,7 @@ class BitFlyerExchangeAdapter(ExchangePort):
 
     def get_active_orders(self, symbol: str) -> List[Order]:
         params = {
-            "product_code": self.PRODUCT_CODE,
+            "product_code": self._product_code,
             "child_order_state": "ACTIVE",
             "count": 100,
         }
@@ -148,7 +145,7 @@ class BitFlyerExchangeAdapter(ExchangePort):
             orders.append(
                 Order(
                     order_id=oid,
-                    symbol=self.PRODUCT_CODE,
+                    symbol=self._product_code,
                     side=OrderSide(o["side"]),
                     execution_type=ExecutionType(o["child_order_type"]),
                     size=float(o["size"]),
@@ -159,10 +156,17 @@ class BitFlyerExchangeAdapter(ExchangePort):
         return orders
 
     def get_position_summary(self, symbol: str) -> PositionSummary:
-        positions = self._http.get_private(
-            "/v1/me/getpositions", {"product_code": self.PRODUCT_CODE}
-        )
         summary = PositionSummary()
+        if self._is_spot:
+            # スポットは BTC 残高をそのままポジションサマリーとして返す
+            balances = self._http.get_private("/v1/me/getbalance")
+            for b in balances:
+                if b["currency_code"] == "BTC":
+                    summary.buy_quantity = float(b["amount"])
+            return summary
+        positions = self._http.get_private(
+            "/v1/me/getpositions", {"product_code": self._product_code}
+        )
         total_buy = 0.0
         total_sell = 0.0
         buy_value = 0.0
@@ -183,8 +187,11 @@ class BitFlyerExchangeAdapter(ExchangePort):
         return summary
 
     def get_open_positions(self, symbol: str) -> Dict[int, Position]:
+        if self._is_spot:
+            # スポットは内部 position_state に委ねるため空を返す
+            return {}
         positions = self._http.get_private(
-            "/v1/me/getpositions", {"product_code": self.PRODUCT_CODE}
+            "/v1/me/getpositions", {"product_code": self._product_code}
         )
         result: Dict[int, Position] = {}
         for p in positions:
@@ -207,21 +214,28 @@ class BitFlyerExchangeAdapter(ExchangePort):
         return 0
 
     def get_recent_executions(self, symbol: str, count: int = 100) -> List[Execution]:
-        params = {"product_code": self.PRODUCT_CODE, "count": count}
+        params = {"product_code": self._product_code, "count": count}
         execs = self._http.get_private("/v1/me/getexecutions", params)
         result = []
         for e in execs:
             ts = datetime.fromisoformat(e["exec_date"].replace("Z", "+00:00"))
             # BitFlyer の約定はポジション概念がやや異なるため、
             # settle_type を side で推定 (open はすべて OPEN とみなす)
+            side = OrderSide(e["side"])
+            # スポットは空売り不可: SELL 約定をクローズとして扱う
+            settle_type = (
+                SettleType.CLOSE
+                if (self._is_spot and side == OrderSide.SELL)
+                else SettleType.OPEN
+            )
             result.append(
                 Execution(
                     order_id=self._acceptance_to_int(
                         str(e.get("child_order_acceptance_id", e["id"]))
                     ),
                     position_id=int(e.get("id", 0)),
-                    settle_type=SettleType.OPEN,
-                    side=OrderSide(e["side"]),
+                    settle_type=settle_type,
+                    side=side,
                     size=float(e["size"]),
                     price=float(e["price"]),
                     loss_gain=0.0,  # BitFlyer は約定時に P&L を返さない

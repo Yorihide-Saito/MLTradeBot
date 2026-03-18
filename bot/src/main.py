@@ -40,7 +40,7 @@ def build_application(settings: Settings) -> BotOrchestrator:
     http = BitFlyerHttpClient(auth)
 
     # 2. Exchange adapter
-    exchange = BitFlyerExchangeAdapter(http)
+    exchange = BitFlyerExchangeAdapter(http, product_code=settings.symbol)
 
     # 3. OHLCV: WebSocket でリアルタイム収集 + REST で補完
     data_provider = BitFlyerDataProvider(
@@ -63,6 +63,7 @@ def build_application(settings: Settings) -> BotOrchestrator:
     logger.info(f"Loaded {len(feature_names)} feature names")
 
     # 6. BotAgent をモデルペアの数だけ生成
+    spot_mode = settings.symbol == "BTC_JPY"
     agents: List[BotAgent] = []
     for bot_id in model_repo.list_bot_ids():
         model_buy, model_sell = model_repo.load_model_pair(bot_id)
@@ -70,7 +71,7 @@ def build_application(settings: Settings) -> BotOrchestrator:
         agent = BotAgent(
             bot_id=bot_id,
             atr_coeff=atr_coeff,
-            lot=0.01,  # 起動直後に update_lots() で上書きされる
+            lot=0.001,  # 起動直後に update_lots() で上書きされる
             atr_period=settings.atr_period,
             symbol=settings.symbol,
             pips=settings.pips,
@@ -79,6 +80,7 @@ def build_application(settings: Settings) -> BotOrchestrator:
             signal_gen_sell=LightGBMSignalGenerator(model_sell),
             state_repo=state_repo,
             feature_names=feature_names,
+            spot_mode=spot_mode,
         )
         agents.append(agent)
         logger.info(f"BotAgent: {bot_id} (atr_coeff={atr_coeff})")

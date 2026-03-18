@@ -36,6 +36,7 @@ class BotAgent:
         signal_gen_sell: SignalGeneratorPort,
         state_repo: StateRepositoryPort,
         feature_names: List[str],
+        spot_mode: bool = False,
     ) -> None:
         self.bot_id = bot_id
         self.atr_coeff = atr_coeff
@@ -49,6 +50,7 @@ class BotAgent:
         self._signal_sell = signal_gen_sell
         self._state = state_repo
         self._feature_names = feature_names
+        self._spot_mode = spot_mode
 
         # 状態をキャッシュから復元
         self._order_state: Dict[int, tuple] = self._state.load_order_state(bot_id)
@@ -176,7 +178,7 @@ class BotAgent:
                 self._order_state[order_id] = ("BUY", self.lot, buy_price)
             logger.info(f"[{self.bot_id}] entry BUY {self.lot} @ {buy_price}")
 
-        if signal.sell_signal and sell_size == 0.0 and 0 < self.lot < 0.1:
+        if not self._spot_mode and signal.sell_signal and sell_size == 0.0 and 0 < self.lot < 0.1:
             order_id = self._exchange.place_limit_order(
                 self.symbol, OrderSide.SELL, self.lot, sell_price
             )

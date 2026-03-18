@@ -32,16 +32,16 @@ class LotAllocator:
             ロットのリスト (インデックス 0 が最大)
         """
         max_lot_raw = jpy_balance / current_price * self._ratio
-        max_lot = self._round_down_2dp(max_lot_raw)
-        max_lot_int = int(max_lot * 100)
+        max_lot = self._round_down_3dp(max_lot_raw)
+        max_lot_int = int(round(max_lot * 1000))
 
         lot_list = [
-            (max_lot_int + i) // n_bots / 100
+            (max_lot_int + i) // n_bots / 1000
             for i in range(n_bots)
         ]
         return list(reversed(lot_list))
 
     @staticmethod
-    def _round_down_2dp(value: float) -> float:
-        two_places = Decimal(10) ** -2
-        return float(Decimal(str(value)).quantize(two_places, rounding=ROUND_DOWN))
+    def _round_down_3dp(value: float) -> float:
+        three_places = Decimal(10) ** -3
+        return float(Decimal(str(value)).quantize(three_places, rounding=ROUND_DOWN))
