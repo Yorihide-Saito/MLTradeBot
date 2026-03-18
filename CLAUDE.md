@@ -9,18 +9,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pip install -e ".[dev]"
 
 # Run the trading bot
-python -m bot.src.main
+python -m bot.main
 # or via pyproject.toml script:
 bot
 
 # Retrain all models — Binance (推奨)
-python -m training.src.main --binance --days 365 --trials 100
+python -m training.main --binance --days 365 --trials 100
 
 # Retrain with CSV bootstrap (BitFlyer 形式)
-python -m training.src.main --csv /work/data/BitFlyer_BTCJPY_1h.csv --trials 100
+python -m training.main --csv /work/data/BitFlyer_BTCJPY_1h.csv --trials 100
 
 # Retrain a single bot
-python -m training.src.main --binance --days 365 --bot-id 0p186 --trials 50
+python -m training.main --binance --days 365 --bot-id 0p186 --trials 50
 
 # Docker
 docker compose up bot
@@ -35,7 +35,7 @@ mypy src/ bot/ training/ back_test/
 
 # Tests (testpaths configured in pyproject.toml)
 pytest
-pytest bot/unit_test/test_bot_agent.py  # single file
+pytest tests/bot/test_bot_agent.py  # single file
 pytest -x                               # stop on first failure
 ```
 
@@ -43,19 +43,20 @@ pytest -x                               # stop on first failure
 
 ```
 bot/
-  src/main.py         ← Composition Root: wires all layers, starts BotOrchestrator
-  unit_test/          ← bot & shared infrastructure tests
+  main.py             ← Composition Root: wires all layers, starts BotOrchestrator
 
-training/
-  src/                ← retraining pipeline (independent of bot runtime)
-    main.py           ← CLI: --binance / --csv / --days / --trials / --bot-id
-    pipeline.py       ← RetrainPipeline orchestrator
-    binance_data_fetcher.py  ← Binance BTCUSDT × USDJPY → BTCJPY
-    data_fetcher.py   ← BitFlyer REST (max 31 days)
-    label_generator.py
-    model_trainer.py
-    model_evaluator.py
-  unit_test/          ← training-specific tests
+training/             ← retraining pipeline (independent of bot runtime)
+  main.py             ← CLI: --binance / --csv / --days / --trials / --bot-id
+  pipeline.py         ← RetrainPipeline orchestrator
+  binance_data_fetcher.py  ← Binance BTCUSDT × USDJPY → BTCJPY
+  data_fetcher.py     ← BitFlyer REST (max 31 days)
+  label_generator.py
+  model_trainer.py
+  model_evaluator.py
+
+tests/
+  bot/                ← bot & shared infrastructure tests
+  training/           ← training-specific tests
 
 back_test/
   src/                ← OHLCV backtesting (未実装)

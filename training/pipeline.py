@@ -20,10 +20,10 @@ from loguru import logger
 from src.infrastructure.feature_engineering.feature_selector import FeatureSelector
 from src.infrastructure.feature_engineering.talib_feature_calculator import TALibFeatureCalculator
 from src.infrastructure.persistence.joblib_model_repository import JoblibModelRepository
-from training.src.data_fetcher import HistoricalDataFetcher
-from training.src.label_generator import LabelGenerator
-from training.src.model_evaluator import ModelEvaluator
-from training.src.model_trainer import ModelTrainer
+from training.data_fetcher import HistoricalDataFetcher
+from training.label_generator import LabelGenerator
+from training.model_evaluator import ModelEvaluator
+from training.model_trainer import ModelTrainer
 
 
 class RetrainPipeline:

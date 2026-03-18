@@ -23,13 +23,13 @@ class TestLotAllocator:
         # リストは降順
         assert lots[0] >= lots[1] >= lots[2]
 
-    def test_rounding_down_to_2dp(self):
+    def test_rounding_down_to_3dp(self):
         allocator = LotAllocator(available_margin_ratio=0.5)
         # 余剰が生じる割り切れないケース
         lots = allocator.allocate(jpy_balance=1_234_567, current_price=5_000_000, n_bots=2)
         for lot in lots:
-            # 小数点以下 2 桁まで
-            assert round(lot, 2) == lot
+            # 小数点以下 3 桁まで (スポット取引の 0.001 BTC 単位対応)
+            assert round(lot, 3) == lot
 
     def test_ratio_boundary_assertion(self):
         with pytest.raises(AssertionError):

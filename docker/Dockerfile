@@ -31,9 +31,10 @@ COPY src/ ./src/
 COPY bot/ ./bot/
 COPY training/ ./training/
 COPY back_test/ ./back_test/
+COPY tests/ ./tests/
 
 ENV PYTHONPATH=/work
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
-CMD ["python", "-m", "bot.src.main"]
+CMD ["python", "-m", "bot.main"]
