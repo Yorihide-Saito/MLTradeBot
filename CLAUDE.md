@@ -9,18 +9,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pip install -e ".[dev]"
 
 # Run the trading bot
-python -m bot.main
+python -m mltradebot.bot.main
 # or via pyproject.toml script:
 bot
 
 # Retrain all models — Binance (推奨)
-python -m training.main --binance --days 365 --trials 100
+python -m mltradebot.training.main --binance --days 365 --trials 100
 
 # Retrain with CSV bootstrap (BitFlyer 形式)
-python -m training.main --csv /work/data/BitFlyer_BTCJPY_1h.csv --trials 100
+python -m mltradebot.training.main --csv /work/data/BitFlyer_BTCJPY_1h.csv --trials 100
 
 # Retrain a single bot
-python -m training.main --binance --days 365 --bot-id 0p186 --trials 50
+python -m mltradebot.training.main --binance --days 365 --bot-id 0p186 --trials 50
 
 # Docker
 docker compose up bot

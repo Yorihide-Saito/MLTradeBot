@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.domain.entities.order import Execution, OrderSide, SettleType
-from src.domain.entities.position import Position
+from mltradebot.domain.entities.order import Execution, OrderSide, SettleType
+from mltradebot.domain.entities.position import Position
 
 _TS = datetime(2024, 1, 1)
 

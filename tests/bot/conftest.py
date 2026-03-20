@@ -10,11 +10,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.domain.entities.order import Execution, OrderSide, SettleType
-from src.domain.entities.position import Position
-from src.domain.ports.exchange_port import ExchangePort
-from src.domain.ports.signal_generator_port import SignalGeneratorPort
-from src.domain.ports.state_repository_port import StateRepositoryPort
+from mltradebot.domain.entities.order import Execution, OrderSide, SettleType
+from mltradebot.domain.entities.position import Position
+from mltradebot.domain.ports.exchange_port import ExchangePort
+from mltradebot.domain.ports.signal_generator_port import SignalGeneratorPort
+from mltradebot.domain.ports.state_repository_port import StateRepositoryPort
 
 
 # ------------------------------------------------------------------ #
@@ -82,7 +82,7 @@ def mock_state_repo() -> MagicMock:
 
 @pytest.fixture
 def bot_agent(mock_exchange, mock_signal_buy, mock_signal_sell, mock_state_repo):
-    from src.application.services.bot_agent import BotAgent
+    from mltradebot.application.services.bot_agent import BotAgent
     return BotAgent(
         bot_id="0p186",
         atr_coeff=0.186,

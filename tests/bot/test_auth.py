@@ -10,8 +10,8 @@ import json
 import pytest
 from freezegun import freeze_time
 
-from src.infrastructure.exchange.bitflyer.bitflyer_auth import BitFlyerAuthenticator
-from src.infrastructure.exchange.gmo.gmo_auth import GMOAuthenticator
+from mltradebot.infrastructure.exchange.bitflyer.bitflyer_auth import BitFlyerAuthenticator
+from mltradebot.infrastructure.exchange.gmo.gmo_auth import GMOAuthenticator
 
 
 FIXED_TIMESTAMP = "2024-01-15 12:00:00"

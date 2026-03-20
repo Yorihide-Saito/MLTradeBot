@@ -22,7 +22,7 @@ if [ -z "$(ls model_buy/*.xz 2>/dev/null)" ]; then
 fi
 
 echo "=== MLTradeBot 起動 ==="
-echo "Symbol: $(grep SYMBOL .env | cut -d= -f2)"
+echo "Symbol:  $(grep SYMBOL .env | cut -d= -f2)"
 echo "Margin: $(grep AVAILABLE_MARGIN .env | cut -d= -f2)"
 echo ""
 

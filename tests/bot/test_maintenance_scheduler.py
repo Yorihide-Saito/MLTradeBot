@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from src.application.services.maintenance_scheduler import MaintenanceScheduler
+from mltradebot.application.services.maintenance_scheduler import MaintenanceScheduler
 
 
 @pytest.fixture

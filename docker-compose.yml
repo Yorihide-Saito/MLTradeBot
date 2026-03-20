@@ -12,7 +12,7 @@ services:
       - ./features:/work/features:ro
     shm_size: "2gb"
     restart: unless-stopped
-    command: python -m bot.main
+    command: python -m mltradebot.bot.main
 
   retrain:
     build:
@@ -26,4 +26,4 @@ services:
       - ./features:/work/features
     shm_size: "2gb"
     profiles: ["retrain"]
-    command: python -m training.main --binance --days 365 --trials 100
+    command: python -m mltradebot.training.main --binance --days 365 --trials 100

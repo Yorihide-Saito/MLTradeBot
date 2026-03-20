@@ -42,8 +42,11 @@ dev = [
 ]
 
 [project.scripts]
-bot     = "bot.main:main"
-retrain = "training.main:main"
+bot     = "mltradebot.bot.main:main"
+retrain = "mltradebot.training.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.ruff]
 line-length = 100
@@ -51,6 +54,7 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.mypy]
 python_version = "3.12"

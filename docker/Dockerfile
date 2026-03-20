@@ -24,17 +24,18 @@ RUN cd /tmp \
 WORKDIR /work
 
 # Install Python dependencies
+# スタブを先に作成して editable install がパッケージを発見できるようにする
 COPY pyproject.toml .
-RUN pip install --no-cache-dir ta-lib && pip install --no-cache-dir -e .
+RUN mkdir -p src/mltradebot && touch src/mltradebot/__init__.py \
+    && pip install --no-cache-dir ta-lib \
+    && pip install --no-cache-dir -e .
 
+# 実際のソースを上書きコピー (依存関係レイヤーはキャッシュされる)
 COPY src/ ./src/
-COPY bot/ ./bot/
-COPY training/ ./training/
-COPY back_test/ ./back_test/
 COPY tests/ ./tests/
 
-ENV PYTHONPATH=/work
+ENV PYTHONPATH=/work/src
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
-CMD ["python", "-m", "bot.main"]
+CMD ["python", "-m", "mltradebot.bot.main"]

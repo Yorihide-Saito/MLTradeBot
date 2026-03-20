@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.application.services.lot_allocator import LotAllocator
+from mltradebot.application.services.lot_allocator import LotAllocator
 
 
 class TestLotAllocator:
